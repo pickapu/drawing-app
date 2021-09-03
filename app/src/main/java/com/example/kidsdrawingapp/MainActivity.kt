@@ -5,7 +5,11 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.media.MediaScannerConnection
+import android.os.AsyncTask
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.provider.MediaStore
@@ -19,6 +23,9 @@ import androidx.core.view.children
 import androidx.core.view.get
 import com.example.kidsdrawingapp.databinding.ActivityMainBinding
 import com.example.kidsdrawingapp.databinding.DialogBrushSizeBinding
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.lang.Exception
 
 class MainActivity : AppCompatActivity() {
@@ -58,6 +65,13 @@ class MainActivity : AppCompatActivity() {
         }
         binding.ibBack.setOnClickListener {
             binding.drawingv.onClickUndo()
+        }
+        binding.ibSave.setOnClickListener {
+            if(isReadStorageAllowed()){
+                BitmapAsyncTask(getBitmapFromView(binding.frame)).execute()
+            }else{
+                requestStoragePermission()
+            }
         }
     }
 
@@ -152,6 +166,84 @@ class MainActivity : AppCompatActivity() {
     private fun isReadStorageAllowed():Boolean{
         val result=ContextCompat.checkSelfPermission(this,Manifest.permission.READ_EXTERNAL_STORAGE)
         return result==PackageManager.PERMISSION_GRANTED
+    }
+    private fun getBitmapFromView(view: View):Bitmap{
+        val returnedBitmap=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888)
+        val canvas=Canvas(returnedBitmap)
+        val bgDrawable=view.background
+        if(bgDrawable!=null){
+            bgDrawable.draw(canvas)
+        }else{
+            canvas.drawColor(Color.WHITE)
+        }
+        view.draw(canvas)
+        return returnedBitmap
+    }
+    private inner class BitmapAsyncTask(val mBimap:Bitmap):AsyncTask<Any,Void,String>(){
+        private lateinit var mProgressBar:Dialog
+        override fun onPreExecute() {
+            super.onPreExecute()
+            showProgressDialog()
+        }
+
+        override fun doInBackground(vararg p0: Any?): String {
+
+var result=""
+            if(mBimap!=null){
+                try{
+                    val bytes=ByteArrayOutputStream()
+                    mBimap.compress(Bitmap.CompressFormat.PNG,90,bytes)
+                    val f= File(externalCacheDir!!.absoluteFile.toString()
+                            +File.separator+"kidsDrawingApp"
+                            +System.currentTimeMillis()/1000+".png")
+                    val fo=FileOutputStream(f)
+                    fo.write(bytes.toByteArray())
+                    fo.close()
+                    result=f.absolutePath
+                }catch(e:Exception){
+                    result=""
+                    e.printStackTrace()
+                }
+            }
+            return result
+
+
+
+        }
+
+        override fun onPostExecute(result: String?) {
+            super.onPostExecute(result)
+            cancelProgressDialog()
+            if (!result!!.isEmpty()){
+                Toast.makeText(this@MainActivity,
+                "file saved",
+                Toast.LENGTH_LONG).show()
+            }else{
+                Toast.makeText(this@MainActivity,
+                "something wrong",
+                Toast.LENGTH_LONG).show()
+            }
+            MediaScannerConnection.scanFile(this@MainActivity, arrayOf(result),null){
+                path, uri->val shareintent=Intent()
+                shareintent.action=Intent.ACTION_SEND
+                shareintent.putExtra(Intent.EXTRA_STREAM,uri)
+                shareintent.type="image/png"
+                startActivity(
+                    Intent.createChooser(
+                        shareintent,"share"
+                    )
+                )
+            }
+        }
+        private fun showProgressDialog(){
+        mProgressBar= Dialog(this@MainActivity)
+        mProgressBar.setContentView(R.layout.dialog_custom_progress)
+        mProgressBar.show()
+        }
+        private fun cancelProgressDialog(){
+            mProgressBar.cancel()
+        }
+
     }
     companion object{
         private const val STORAGE_PERMISSION_CODE=1
